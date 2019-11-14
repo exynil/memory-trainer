@@ -5,6 +5,7 @@ var counter = 0;
 var level = 1;
 var errors = 0;
 var userLevel = 0;
+var startTime = 0;
 
 canvas.width = innerWidth;
 canvas.height = innerHeight;
@@ -38,7 +39,7 @@ addEventListener('click', function (e) {
 					points.push(new Point(points.length, 0, 0));
 					level++;
 					if (errors == 0) {
-						userLevel++;
+						userLevel += 1 - getTimeSpent() / 10;
 					}
 					mix();
 				}
@@ -50,6 +51,16 @@ addEventListener('click', function (e) {
 		}
 	}
 });
+
+function getTimeSpent() {
+	if (startTime == 0) {
+		startTime = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
+		return 0;
+	}
+	else {
+		return new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds() - startTime - level * 0.8;
+	}
+}
 
 function drawLine(x1, y1, x2, y2) {
 	this.ctx.beginPath();
@@ -114,7 +125,8 @@ function animate() {
 		point.update(points);
 	});
 
-	drawText('Уровень вашей памяти: ' + userLevel, 30, 40, 20, '#666666');
+
+	drawText('Уровень вашей памяти: ' + userLevel.toFixed(1), 30, 40, 20, '#666666');
 	drawText('Кол-во ошибок: ' + errors, 30, 80, 20, '#666666');
 	drawText('Уровень: ' + level, 30, 120, 20, '#666666');
 }
@@ -125,6 +137,7 @@ function hideAll() {
 	points.forEach(point => {
 		point.hide(points);
 	});
+	startTime = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
 }
 
 setTimeout(hideAll, 1000);
