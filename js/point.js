@@ -3,9 +3,9 @@ class Point {
         this.id = id;
         this.x = x;
         this.y = y;
-        this.textSize = 90;
+        this.textSize = 130;
         this.textColor = '#dedede';
-        this.radius = 60;
+        this.radius = 120;
         this.circleColor = '#dedede';
         this.isHidden = false;
     }
@@ -31,7 +31,6 @@ class Point {
         ctx.strokeStyle = this.circleColor;
         ctx.arc(this.x, this.y, this.radius, Math.PI * 2, false);
         ctx.fill();
-        ctx.stroke();
         ctx.restore();
         ctx.closePath();
     }
@@ -41,7 +40,7 @@ class Point {
         ctx.save();
         ctx.font = this.textSize + 'pt Jura';
         ctx.fillStyle = this.textColor;
-        ctx.fillText(this.id, this.x - ctx.measureText('0').width / 2, this.y + this.textSize / 2);
+        ctx.fillText(this.id, this.x - ctx.measureText(this.id).width / 2, this.y + this.textSize / 2);
         ctx.restore();
         ctx.closePath();
     }
@@ -50,5 +49,9 @@ class Point {
     }
     error() {
         this.circleColor = '#e84343';
+    }
+    reduce() {
+        this.textSize -= 3;
+        this.radius -= 3;
     }
 }

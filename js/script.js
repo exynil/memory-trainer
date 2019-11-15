@@ -1,11 +1,6 @@
 var canvas = document.querySelector('canvas');
 var ctx = canvas.getContext('2d');
-var points = [];
-var counter = 0;
-var level = 1;
-var errors = 0;
-var userLevel = 0;
-var startTime = 0;
+var points, counter, level, errors, userLevel, startTime, animationId;
 
 canvas.width = innerWidth;
 canvas.height = innerHeight;
@@ -25,6 +20,18 @@ addEventListener('resize', function () {
 	}
 });
 
+addEventListener('keydown', function (event) {
+	switch (event.code) {
+		case 'Enter':
+			init();
+			animate();
+			break;
+		case 'Space':
+			animate();
+			break;
+	}
+});
+
 // Отслеживание клика
 addEventListener('click', function (e) {
 	let mx = e.clientX;
@@ -41,10 +48,54 @@ addEventListener('click', function (e) {
 					if (errors == 0) {
 						userLevel += 1 - getTimeSpent() / 10;
 					}
+					reduce();
 					mix();
 				}
 			} else {
 				points[i].error();
+				if (errors == 0) {
+					cancelAnimationFrame(animationId);
+					ctx.beginPath();
+					ctx.save();
+					ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.restore();
+					ctx.closePath();
+
+					ctx.beginPath();
+					ctx.save();
+					ctx.shadowBlur = 10;
+					ctx.shadowColor = '#F50338';
+					ctx.font = "bold 40pt Courier New";
+					ctx.fillStyle = '#F50338';
+					let text = 'Уровень вашей ';
+					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 - 200);
+					text = 'фотографической памяти';
+					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 - 100);
+					if (userLevel < 2)
+						text = userLevel.toFixed(2) + ' - фу таким быть!';
+					else if (userLevel < 4)
+						text = userLevel.toFixed(2) + ' - очень плохо!';
+					else if (userLevel < 6)
+						text = userLevel.toFixed(2) + ' - не плохо!';
+					else if (userLevel < 7)
+						text = userLevel.toFixed(2) + ' - хорошо!';
+					else if (userLevel < 8)
+						text = userLevel.toFixed(2) + ' - отлично!';
+					else if (userLevel < 10)
+						text = userLevel.toFixed(2) + ' - это просто не вероятно!';
+					else
+						text = userLevel.toFixed(2) + ' - я вам завидую!';
+					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2);
+					ctx.font = "bold 20pt Courier New";
+					text = 'Пробел - продолжить, Enter - начать с начала';
+					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 + 100);
+					ctx.font = "bold 20pt Courier New";
+					text = '[Создатель: Ким Максим]';
+					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 + 200);
+					ctx.restore();
+					ctx.closePath();
+				}
 				errors++;
 			}
 			break;
@@ -105,9 +156,24 @@ function mix() {
 	setTimeout(hideAll, 1000);
 }
 
+function reduce() {
+	points[0].reduce();
+
+	for (let i = 1; i < points.length; i++) {
+		points[i].radius = points[0].radius;
+		points[i].textSize = points[0].textSize;
+	}
+}
+
 // Инициализация
 function init() {
-	let radius = 60;
+	points = [];
+	counter = 0;
+	level = 1;
+	errors = 0;
+	userLevel = 0;
+	startTime = 0;
+	let radius = 120;
 	let x = randomIntFromRange(radius, canvas.width - radius);
 	let y = randomIntFromRange(radius, canvas.height - radius);
 
@@ -118,7 +184,7 @@ init();
 
 // Повторно запускающаяся функция для анимации
 function animate() {
-	requestAnimationFrame(animate);
+	animationId = requestAnimationFrame(animate);
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 	points.forEach(point => {
@@ -126,7 +192,7 @@ function animate() {
 	});
 
 
-	drawText('Уровень вашей памяти: ' + userLevel.toFixed(1), 30, 40, 20, '#666666');
+	drawText('Уровень вашей памяти: ' + userLevel.toFixed(2), 30, 40, 20, '#666666');
 	drawText('Кол-во ошибок: ' + errors, 30, 80, 20, '#666666');
 	drawText('Уровень: ' + level, 30, 120, 20, '#666666');
 }
