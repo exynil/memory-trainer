@@ -24,6 +24,7 @@ addEventListener('keydown', function (event) {
 	switch (event.code) {
 		case 'Enter':
 			init();
+			setTimeout(hideAll, 1000);
 			animate();
 			break;
 		case 'Space':
