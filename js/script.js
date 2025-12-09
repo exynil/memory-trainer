@@ -1,221 +1,383 @@
-var canvas = document.querySelector('canvas');
-var ctx = canvas.getContext('2d');
-var points, counter, level, errors, userLevel, startTime, animationId;
+class MemoryTrainer {
+	static INITIAL_RADIUS = 120;
+	static INITIAL_POINT_COUNT = 1;
+	static REVEAL_DELAY = 100;
+	static GAME_OVER_DELAY = 800;
+	static GAME_OVER_SCREEN_DELAY = 500;
+	static HIDE_DELAY = 1000;
+	static PARTICLE_COUNT = 12;
+	static CLICK_SOUND_FREQ = 800;
+	static CLICK_SOUND_DURATION = 0.1;
+	static ERROR_SOUND_START_FREQ = 200;
+	static ERROR_SOUND_END_FREQ = 100;
+	static ERROR_SOUND_DURATION = 0.2;
 
-canvas.width = innerWidth;
-canvas.height = innerHeight;
+	constructor() {
+		this.canvas = document.getElementById('gameCanvas');
+		this.ctx = this.canvas.getContext('2d');
+		this.points = [];
+		this.counter = 0;
+		this.level = 1;
+		this.record = this.loadRecord();
+		this.animationId = null;
+		this.isPaused = false;
+		this.isGameOver = false;
+		this.audioContext = null;
 
-// Отслеживание изменения размера окна
-addEventListener('resize', function () {
-	canvas.width = innerWidth;
-	canvas.height = innerHeight;
+		this.initAudio();
+		this.initCanvas();
+		this.initEventListeners();
+		this.init();
+		this.animate();
+	}
 
-	for (let i = 0; i < points.length; i++) {
-		if (points[i].x > canvas.width) {
-			points[i].x = randomIntFromRange(points[i].radius, canvas.width - points[i].radius);
-		}
-		if (points[i].y > canvas.height) {
-			points[i].y = randomIntFromRange(points[i].radius, canvas.height - points[i].radius);
+	initAudio() {
+		try {
+			this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		} catch (e) {
+			console.warn('Web Audio API not supported');
 		}
 	}
-});
 
-addEventListener('keydown', function (event) {
-	switch (event.code) {
-		case 'Enter':
-			init();
-			setTimeout(hideAll, 1000);
-			animate();
-			break;
-		case 'Space':
-			animate();
-			break;
+	playSound(frequency, duration, type = 'sine') {
+		if (!this.audioContext) return;
+
+		const oscillator = this.audioContext.createOscillator();
+		const gainNode = this.audioContext.createGain();
+
+		oscillator.connect(gainNode);
+		gainNode.connect(this.audioContext.destination);
+
+		oscillator.frequency.value = frequency;
+		oscillator.type = type;
+
+		gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+		gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+
+		oscillator.start(this.audioContext.currentTime);
+		oscillator.stop(this.audioContext.currentTime + duration);
 	}
-});
 
-// Отслеживание клика
-addEventListener('click', function (e) {
-	let mx = e.clientX;
-	let my = e.clientY;
-	for (let i = 0; i < points.length; i++) {
-		if (getDistance(mx, my, points[i].x, points[i].y) - points[i].radius < 0) {
-			if (counter == points[i].id) {
-				points[i].show();
-				counter++;
-				if (counter == points.length) {
-					counter = 0;
-					points.push(new Point(points.length, 0, 0));
-					level++;
-					if (errors == 0) {
-						userLevel += 1 - getTimeSpent() / 10;
-					}
-					reduce();
-					mix();
-				}
-			} else {
-				points[i].error();
-				if (errors == 0) {
-					cancelAnimationFrame(animationId);
-					ctx.beginPath();
-					ctx.save();
-					ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-					ctx.fillRect(0, 0, canvas.width, canvas.height);
-					ctx.restore();
-					ctx.closePath();
+	playClickSound() {
+		this.playSound(
+			MemoryTrainer.CLICK_SOUND_FREQ,
+			MemoryTrainer.CLICK_SOUND_DURATION,
+			'sine'
+		);
+	}
 
-					ctx.beginPath();
-					ctx.save();
-					ctx.shadowBlur = 10;
-					ctx.shadowColor = '#F50338';
-					ctx.font = "bold 40pt Courier New";
-					ctx.fillStyle = '#F50338';
-					let text = 'Уровень вашей ';
-					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 - 200);
-					text = 'фотографической памяти';
-					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 - 100);
-					if (userLevel < 2)
-						text = userLevel.toFixed(2) + ' - фу таким быть!';
-					else if (userLevel < 4)
-						text = userLevel.toFixed(2) + ' - очень плохо!';
-					else if (userLevel < 6)
-						text = userLevel.toFixed(2) + ' - не плохо!';
-					else if (userLevel < 7)
-						text = userLevel.toFixed(2) + ' - хорошо!';
-					else if (userLevel < 8)
-						text = userLevel.toFixed(2) + ' - отлично!';
-					else if (userLevel < 10)
-						text = userLevel.toFixed(2) + ' - это просто не вероятно!';
-					else
-						text = userLevel.toFixed(2) + ' - я вам завидую!';
-					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2);
-					ctx.font = "bold 20pt Courier New";
-					text = 'Пробел - продолжить, Enter - начать с начала';
-					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 + 100);
-					ctx.font = "bold 20pt Courier New";
-					text = '[Создатель: Ким Максим]';
-					ctx.fillText(text, canvas.width / 2 - ctx.measureText(text).width / 2, canvas.height / 2 + 200);
-					ctx.restore();
-					ctx.closePath();
-				}
-				errors++;
+	playErrorSound() {
+		if (!this.audioContext) return;
+		const oscillator = this.audioContext.createOscillator();
+		const gainNode = this.audioContext.createGain();
+
+		oscillator.connect(gainNode);
+		gainNode.connect(this.audioContext.destination);
+
+		const { currentTime } = this.audioContext;
+		const duration = MemoryTrainer.ERROR_SOUND_DURATION;
+
+		oscillator.frequency.setValueAtTime(MemoryTrainer.ERROR_SOUND_START_FREQ, currentTime);
+		oscillator.frequency.exponentialRampToValueAtTime(
+			MemoryTrainer.ERROR_SOUND_END_FREQ,
+			currentTime + duration
+		);
+		oscillator.type = 'sawtooth';
+
+		gainNode.gain.setValueAtTime(0.3, currentTime);
+		gainNode.gain.exponentialRampToValueAtTime(0.01, currentTime + duration);
+
+		oscillator.start(currentTime);
+		oscillator.stop(currentTime + duration);
+	}
+
+	initCanvas() {
+		this.resizeCanvas();
+		window.addEventListener('resize', () => this.handleResize());
+	}
+
+	resizeCanvas() {
+		this.canvas.width = window.innerWidth;
+		this.canvas.height = window.innerHeight;
+	}
+
+	handleResize() {
+		this.resizeCanvas();
+		this.points.forEach(point => {
+			if (point.x > this.canvas.width) {
+				point.x = this.randomInt(point.radius, this.canvas.width - point.radius);
 			}
-			break;
+			if (point.y > this.canvas.height) {
+				point.y = this.randomInt(point.radius, this.canvas.height - point.radius);
+			}
+		});
+	}
+
+	initEventListeners() {
+		window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+		this.canvas.addEventListener('click', (e) => this.handleClick(e));
+	}
+
+	handleKeyDown(event) {
+		if (event.code === 'Enter') {
+			this.restart();
 		}
 	}
-});
 
-function getTimeSpent() {
-	if (startTime == 0) {
-		startTime = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
-		return 0;
+	handleClick(e) {
+		if (this.isGameOver) {
+			this.restart();
+			return;
+		}
+
+		if (this.isPaused) return;
+
+		const rect = this.canvas.getBoundingClientRect();
+		const mx = e.clientX - rect.left;
+		const my = e.clientY - rect.top;
+
+		const clickedPoint = this.findClickedPoint(mx, my);
+		if (!clickedPoint) return;
+
+		if (this.counter === clickedPoint.id) {
+			this.handleCorrectClick(clickedPoint);
+		} else {
+			this.handleIncorrectClick(clickedPoint);
+		}
 	}
-	else {
-		return new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds() - startTime - level * 0.8;
-	}
-}
 
-function drawLine(x1, y1, x2, y2) {
-	this.ctx.beginPath();
-	this.ctx.save();
-	this.ctx.moveTo(x1, y1);
-	this.ctx.lineTo(x2, y2);
-	this.ctx.lineWidth = 2;
-	this.ctx.strokeStyle = '#f5f5f5';
-	this.ctx.stroke();
-	this.ctx.restore();
-	this.ctx.closePath();
-}
-
-function drawText(text, x, y, size, color) {
-	ctx.beginPath();
-	ctx.save();
-	ctx.font = size + 'pt Jura';
-	ctx.fillStyle = color;
-	ctx.fillText(text, x, y);
-	ctx.restore();
-	ctx.closePath();
-}
-
-function mix() {
-	for (let i = 0; i < points.length; i++) {
-		let x = randomIntFromRange(points[i].radius, canvas.width - points[i].radius);
-		let y = randomIntFromRange(points[i].radius, canvas.height - points[i].radius);
-
-		for (let j = 0; j < i; j++) {
-			if (getDistance(x, y, points[j].x, points[j].y) - points[i].radius * 2 < 0) {
-				x = randomIntFromRange(points[i].radius, canvas.width - points[i].radius);
-				y = randomIntFromRange(points[i].radius, canvas.height - points[i].radius);
-
-				j = -1;
+	findClickedPoint(x, y) {
+		for (let i = this.points.length - 1; i >= 0; i--) {
+			const point = this.points[i];
+			const distance = this.getDistance(x, y, point.x, point.y);
+			if (distance <= point.radius) {
+				return point;
 			}
 		}
-
-		points[i].x = x;
-		points[i].y = y;
-		points[i].notError();
+		return null;
 	}
-	setTimeout(hideAll, 1000);
-}
 
-function reduce() {
-	points[0].reduce();
+	handleCorrectClick(point) {
+		point.show();
+		this.playClickSound();
+		this.counter++;
 
-	for (let i = 1; i < points.length; i++) {
-		points[i].radius = points[0].radius;
-		points[i].textSize = points[0].textSize;
+		if (this.counter === this.points.length) {
+			this.completeLevel();
+		}
+	}
+
+	handleIncorrectClick(point) {
+		point.setError();
+		this.playErrorSound();
+		this.revealRemainingPoints();
+		setTimeout(() => this.gameOver(), MemoryTrainer.GAME_OVER_DELAY);
+	}
+
+	revealRemainingPoints() {
+		let delay = 0;
+		this.points.forEach((point, index) => {
+			if (point.isHidden && index >= this.counter) {
+				setTimeout(() => point.showAsError(), delay);
+				delay += MemoryTrainer.REVEAL_DELAY;
+			}
+		});
+	}
+
+	completeLevel() {
+		this.counter = 0;
+		this.level++;
+		this.points.push(this.createNewPoint());
+		this.reducePointSizes();
+		this.mixPoints();
+		this.updateRecord();
+	}
+
+	createNewPoint() {
+		const id = this.points.length;
+		const radius = this.points.length > 0
+			? this.points[0].radius
+			: MemoryTrainer.INITIAL_RADIUS;
+		const x = this.randomInt(radius, this.canvas.width - radius);
+		const y = this.randomInt(radius, this.canvas.height - radius);
+		return new Point(id, x, y, this.ctx);
+	}
+
+	reducePointSizes() {
+		if (this.points.length === 0) return;
+		this.points[0].reduce();
+		const newRadius = this.points[0].radius;
+		const newTextSize = this.points[0].textSize;
+
+		for (let i = 1; i < this.points.length; i++) {
+			this.points[i].radius = newRadius;
+			this.points[i].textSize = newTextSize;
+		}
+	}
+
+	mixPoints() {
+		const MAX_POSITION_ATTEMPTS = 100;
+
+		this.points.forEach((point, i) => {
+			let x, y;
+			let attempts = 0;
+
+			do {
+				x = this.randomInt(point.radius, this.canvas.width - point.radius);
+				y = this.randomInt(point.radius, this.canvas.height - point.radius);
+				attempts++;
+			} while (this.hasCollision(x, y, point.radius, i) && attempts < MAX_POSITION_ATTEMPTS);
+
+			point.x = x;
+			point.y = y;
+			point.resetError();
+			point.resetAnimation();
+		});
+
+		setTimeout(() => this.hideAll(), MemoryTrainer.HIDE_DELAY);
+	}
+
+	hasCollision(x, y, radius, excludeIndex) {
+		for (let i = 0; i < this.points.length; i++) {
+			if (i === excludeIndex) continue;
+			const distance = this.getDistance(x, y, this.points[i].x, this.points[i].y);
+			if (distance < radius * 2) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	hideAll() {
+		this.points.forEach(point => point.hide());
+	}
+
+	gameOver() {
+		this.isGameOver = true;
+		this.isPaused = true;
+		this.cancelAnimation();
+
+		setTimeout(
+			() => this.drawGameOverScreen(),
+			MemoryTrainer.GAME_OVER_SCREEN_DELAY
+		);
+	}
+
+	drawGameOverScreen() {
+		const ctx = this.ctx;
+		const centerX = this.canvas.width / 2;
+		const centerY = this.canvas.height / 2;
+
+		ctx.save();
+		ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+		ctx.font = '48pt Roboto';
+		ctx.fillStyle = '#FFFFFF';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(`${this.level - 1}`, centerX, centerY - 30);
+
+		ctx.font = '18pt Roboto';
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+		ctx.fillText('Click to continue', centerX, centerY + 60);
+
+		ctx.restore();
+	}
+
+	restart() {
+		this.cancelAnimation();
+		this.init();
+		this.isPaused = false;
+		this.isGameOver = false;
+		this.animate();
+	}
+
+	cancelAnimation() {
+		if (this.animationId) {
+			cancelAnimationFrame(this.animationId);
+			this.animationId = null;
+		}
+	}
+
+	init() {
+		this.points = [];
+		this.counter = 0;
+		this.level = 1;
+		this.isPaused = false;
+		this.isGameOver = false;
+
+		const radius = MemoryTrainer.INITIAL_RADIUS;
+		const x = this.randomInt(radius, this.canvas.width - radius);
+		const y = this.randomInt(radius, this.canvas.height - radius);
+
+		this.points.push(new Point(0, x, y, this.ctx));
+		this.updateUI();
+
+		setTimeout(() => this.hideAll(), MemoryTrainer.HIDE_DELAY);
+	}
+
+	animate() {
+		if (this.isPaused) return;
+
+		const currentTime = performance.now();
+
+		this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+		this.points.forEach(point => {
+			point.update(currentTime);
+		});
+
+		this.updateUI();
+
+		this.animationId = requestAnimationFrame(() => this.animate());
+	}
+
+	updateUI() {
+		const recordEl = document.getElementById('record');
+		const levelEl = document.getElementById('level');
+
+		if (recordEl) recordEl.textContent = this.record;
+		if (levelEl) levelEl.textContent = this.level;
+	}
+
+
+	updateRecord() {
+		if (this.level > this.record) {
+			this.record = this.level;
+			this.saveRecord();
+			this.updateUI();
+		}
+	}
+
+	loadRecord() {
+		try {
+			const record = localStorage.getItem('memoryTrainerRecord');
+			return record ? parseInt(record, 10) : 0;
+		} catch (e) {
+			return 0;
+		}
+	}
+
+	saveRecord() {
+		try {
+			localStorage.setItem('memoryTrainerRecord', this.record.toString());
+		} catch (e) {
+			console.warn('Failed to save record:', e);
+		}
+	}
+
+	randomInt(min, max) {
+		return Math.floor(Math.random() * (max - min) + min);
+	}
+
+	getDistance(x1, y1, x2, y2) {
+		const dx = x2 - x1;
+		const dy = y2 - y1;
+		return Math.sqrt(dx * dx + dy * dy);
 	}
 }
 
-// Инициализация
-function init() {
-	points = [];
-	counter = 0;
-	level = 1;
-	errors = 0;
-	userLevel = 0;
-	startTime = 0;
-	let radius = 120;
-	let x = randomIntFromRange(radius, canvas.width - radius);
-	let y = randomIntFromRange(radius, canvas.height - radius);
-
-	points.push(new Point(0, x, y));
-}
-
-init();
-
-// Повторно запускающаяся функция для анимации
-function animate() {
-	animationId = requestAnimationFrame(animate);
-	ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-	points.forEach(point => {
-		point.update(points);
-	});
-
-
-	drawText('Уровень вашей памяти: ' + userLevel.toFixed(2), 30, 40, 20, '#666666');
-	drawText('Кол-во ошибок: ' + errors, 30, 80, 20, '#666666');
-	drawText('Уровень: ' + level, 30, 120, 20, '#666666');
-}
-
-animate();
-
-function hideAll() {
-	points.forEach(point => {
-		point.hide(points);
-	});
-	startTime = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
-}
-
-setTimeout(hideAll, 1000);
-
-function randomIntFromRange(min, max) {
-	return Math.floor(Math.random() * (max - min) + min);
-}
-
-function getDistance(x1, y1, x2, y2) {
-	let xDistance = x2 - x1;
-	let yDistance = y2 - y1;
-
-	return Math.sqrt(Math.pow(xDistance, 2) + Math.pow(yDistance, 2));
-}
+document.addEventListener('DOMContentLoaded', () => {
+	new MemoryTrainer();
+});
